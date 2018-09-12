@@ -203,7 +203,7 @@ struct BinderIO
 };
 
 struct BinderDeath {
-    void (*func)(BinderState *bs, void *ptr);
+	void *binder;
     void *ptr;
 };
 
@@ -260,7 +260,7 @@ public:
 	void binderRelease(unsigned int target);
 
 	int binderParse(Parcel *data, uintptr_t ptr, size_t size);
-	
+	virtual void binderDeath(void *ptr);
 	void binderLinkToDeath(unsigned int target, struct BinderDeath *death);
 	
 	virtual void binderLoop(void);
@@ -269,7 +269,7 @@ public:
 	
 	void binderSetMaxthreads(int threads);
 
-	virtual void onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) = 0;
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) = 0;
 
 	
 private:

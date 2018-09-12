@@ -89,7 +89,7 @@ struct svcinfo
 {
     struct svcinfo *next;
     uint32_t handle;
-    struct binder_death death;
+    BinderDeath death;
     int allow_isolated;
     size_t len;
     uint16_t name[0];
@@ -108,18 +108,6 @@ struct svcinfo *find_svc(const uint16_t *s16, size_t len)
         }
     }
     return NULL;
-}
-
-void BnServiceManager::svcinfoDeath(void *ptr)
-{
-    struct svcinfo *si = (struct svcinfo* ) ptr;
-
-    ALOGI("service '%s' died\n", str8(si->name, si->len));
-    if (si->handle) {
-        binderRelease(si->handle);
-		
-        si->handle = 0;
-    }
 }
 
 uint16_t svcmgr_id[] = {
@@ -158,7 +146,7 @@ int BnServiceManager::addService(const unsigned short *name, void *ptr)
     if (si) {
         if (si->handle) {
             ALOGE("add_service('%s',%x) uid=%d - ALREADY REGISTERED, OVERRIDE\n", str8(name, ptBinderRef->len), ptBinderRef->handle, ptBinderRef->sender_euid);
-            svcinfoDeath((void *)si);
+            binderDeath((void *)si);
         }
         si->handle = ptBinderRef->handle;
     } else {
@@ -171,7 +159,7 @@ int BnServiceManager::addService(const unsigned short *name, void *ptr)
         si->len = ptBinderRef->len;
         memcpy(si->name, name, (ptBinderRef->len + 1) * sizeof(unsigned short));
         si->name[ptBinderRef->len] = '\0';
-        si->death.func = (void*) svcinfo_death;
+		si->death.binder = this;
         si->death.ptr = si;
         si->allow_isolated = ptBinderRef->allow_isolated;
         si->next = svclist;
@@ -186,10 +174,24 @@ int BnServiceManager::addService(const unsigned short *name, void *ptr)
 
 }
 
-void BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply)
+void BnServiceManager::binderDeath(void *ptr)
+{
+    struct svcinfo *si = (struct svcinfo* ) ptr;
+
+    ALOGI("service '%s' died\n", str8(si->name, si->len));
+    if (si->handle) {
+        binderRelease(si->handle);
+		
+        si->handle = 0;
+    }
+
+}
+
+
+int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply)
 {
     struct svcinfo *si;
-    uint16_t *s;
+    uint16_t *name;
     size_t len;
     uint32_t handle;
     uint32_t strict_policy;
@@ -204,14 +206,14 @@ void BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *m
 
 
     strict_policy = msg.getUint32();
-	s = msg.getString16(&len);
-    if (s == NULL) {
+	name = msg.getString16(&len);
+    if (name == NULL) {
         return -1;
     }
 
     if ((len != (sizeof(svcmgr_id) / 2)) ||
-        memcmp(svcmgr_id, s, sizeof(svcmgr_id))) {
-        fprintf(stderr,"invalid id %s\n", str8(s, len));
+        memcmp(svcmgr_id, name, sizeof(svcmgr_id))) {
+        fprintf(stderr,"invalid id %s\n", str8(name, len));
         return -1;
     }
 
@@ -219,23 +221,23 @@ void BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *m
     switch(txn->code) {
     case SVC_MGR_GET_SERVICE:
     case SVC_MGR_CHECK_SERVICE:
-		s = msg.getString16(&len);
-        if (s == NULL) {
+		name = msg.getString16(&len);
+        if (name == NULL) {
             return -1;
         }
 		BinderRef tBinderRef;
 		tBinderRef.len = len;
 		tBinderRef.sender_euid = txn->sender_euid;
 		tBinderRef.sender_pid = txn->sender_pid;
-        handle = getService(s);
+        handle = getService(name);
         if (!handle)
             break;
-        bio_put_ref(reply, handle);
+		reply.putRef(handle);
         return 0;
 
     case SVC_MGR_ADD_SERVICE:
-		s = msg.getString16(&len);
-        if (s == NULL) {
+		name = msg.getString16(&len);
+        if (name == NULL) {
             return -1;
         }
 		handle = msg.getRef();
@@ -248,7 +250,7 @@ void BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *m
 		tBinderRef.allow_isolated = allow_isolated;
 		tBinderRef.handle = handle;
 			
-        if (addService(s, (void *)&tBinderRef))
+        if (addService(name, (void *)&tBinderRef))
             return -1;
         break;
 
@@ -257,7 +259,7 @@ void BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *m
         return -1;
     }
 
-    bio_put_uint32(reply, 0);
+	reply.putUint32(0);
     return 0;
 
 }

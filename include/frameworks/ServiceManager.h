@@ -27,11 +27,11 @@ public:
 	virtual int getService(const unsigned short *name);
 	virtual int addService(const unsigned short *name, void *ptr);
 	
+	virtual void binderDeath(void *ptr);
 
-	virtual void onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply);
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply);
 
 private:
-	void svcinfoDeath(void *ptr);
 };
 
 
@@ -42,7 +42,7 @@ public:
 	virtual int getService(const unsigned short *name) ;
 	virtual int addService(const unsigned short *name, void *ptr);
 
-	virtual void onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply){/* nothing */}
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply){/* nothing */}
 
 private:
 	

@@ -301,6 +301,12 @@ void Binder::binderRelease(unsigned int target)
     binderWrite(cmd, sizeof(cmd));
 }
 
+void Binder::binderDeath(void *ptr)
+{
+	printf("binderDeath !!!\n");
+}
+
+
 int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
 {
 	int r = 1;
@@ -382,8 +388,10 @@ int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
 		}
 		case BR_DEAD_BINDER: {
 			struct BinderDeath *death = (struct BinderDeath *)(uintptr_t) *(binder_uintptr_t *)ptr;
+			Binder *binder = (Binder *)death->binder;
 			ptr += sizeof(binder_uintptr_t);
-			death->func(mBinderState, death->ptr);
+
+			binder->binderDeath(death->ptr);
 			break;
 		}
 		case BR_FAILED_REPLY:
