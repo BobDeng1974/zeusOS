@@ -4,9 +4,109 @@
 #ifndef _BINDER_H_
 #define _BINDER_H_
 
-#include <sys/ioctl.h>
-#include <linux/ioctl.h>
+class Binder;
+
+
 #include <binder/Parcel.h>
+#include <pthread.h>
+#include <unistd.h>
+
+
+
+#define BINDER_IPC_32BIT
+
+#define BIO_F_SHARED    0x01  /* needs to be buffer freed */
+#define BIO_F_OVERFLOW  0x02  /* ran out of space */
+#define BIO_F_IOERROR   0x04
+#define BIO_F_MALLOCED  0x08  /* needs to be free()'d */
+
+
+
+#define MY_IOC_NRBITS	8
+#define MY_IOC_TYPEBITS	8
+
+/*
+ * Let any architecture override either of the following before
+ * including this file.
+ */
+
+#ifndef MY_IOC_SIZEBITS
+# define MY_IOC_SIZEBITS	14
+#endif
+
+#ifndef MY_IOC_DIRBITS
+# define MY_IOC_DIRBITS	2
+#endif
+
+#define MY_IOC_NRMASK	((1 << MYMY_IOC_NRBITS)-1)
+#define MY_IOC_TYPEMASK	((1 << MYMY_IOC_TYPEBITS)-1)
+#define MY_IOC_SIZEMASK	((1 << MYMY_IOC_SIZEBITS)-1)
+#define MY_IOC_DIRMASK	((1 << MY_IOC_DIRBITS)-1)
+
+#define MY_IOC_NRSHIFT	0
+#define MY_IOC_TYPESHIFT	(MY_IOC_NRSHIFT+MY_IOC_NRBITS)
+#define MY_IOC_SIZESHIFT	(MY_IOC_TYPESHIFT+MY_IOC_TYPEBITS)
+#define MY_IOC_DIRSHIFT	(MY_IOC_SIZESHIFT+MY_IOC_SIZEBITS)
+
+/*
+ * Direction bits, which any architecture can choose to override
+ * before including this file.
+ */
+
+#ifndef MY_IOC_NONE
+# define MY_IOC_NONE	0U
+#endif
+
+#ifndef MY_IOC_WRITE
+# define MY_IOC_WRITE	1U
+#endif
+
+#ifndef MY_IOC_READ
+# define MY_IOC_READ	2U
+#endif
+
+#define MY_IOC(dir,type,nr,size) \
+	(((dir)  << MY_IOC_DIRSHIFT) | \
+	 ((type) << MY_IOC_TYPESHIFT) | \
+	 ((nr)   << MY_IOC_NRSHIFT) | \
+	 ((size) << MY_IOC_SIZESHIFT))
+
+
+#ifdef __KERNEL__
+/* provoke compile error for invalid uses of size argument */
+extern unsigned int __invalid_size_argument_forMY_IOC;
+#define MY_IOC_TYPECHECK(t) \
+	((sizeof(t) == sizeof(t[1]) && \
+	  sizeof(t) < (1 << MY_IOC_SIZEBITS)) ? \
+	  sizeof(t) : __invalid_size_argument_forMY_IOC)
+#else
+#define MY_IOC_TYPECHECK(t) (sizeof(t))
+#endif
+
+/* used to create numbers */
+#define MY_IO(type,nr)		MY_IOC(MY_IOC_NONE,(type),(nr),0)
+#define MY_IOR(type,nr,size)	MY_IOC(MY_IOC_READ,(type),(nr),(MY_IOC_TYPECHECK(size)))
+#define MY_IOW(type,nr,size)	MY_IOC(MY_IOC_WRITE,(type),(nr),(MY_IOC_TYPECHECK(size)))
+#define MY_IOWR(type,nr,size)	MY_IOC(MY_IOC_READ|MY_IOC_WRITE,(type),(nr),(MY_IOC_TYPECHECK(size)))
+#define MY_IOR_BAD(type,nr,size)	MY_IOC(MY_IOC_READ,(type),(nr),sizeof(size))
+#define MY_IOW_BAD(type,nr,size)	MY_IOC(MY_IOC_WRITE,(type),(nr),sizeof(size))
+#define MY_IOWR_BAD(type,nr,size)	MY_IOC(MY_IOC_READ|MY_IOC_WRITE,(type),(nr),sizeof(size))
+
+/* used to decode ioctl numbers.. */
+#define MY_IOC_DIR(nr)		(((nr) >> MY_IOC_DIRSHIFT) & MY_IOC_DIRMASK)
+#define MY_IOC_TYPE(nr)		(((nr) >> MY_IOC_TYPESHIFT) & MY_IOC_TYPEMASK)
+#define MY_IOC_NR(nr)		(((nr) >> MY_IOC_NRSHIFT) & MY_IOC_NRMASK)
+#define MY_IOC_SIZE(nr)		(((nr) >> MY_IOC_SIZESHIFT) & MY_IOC_SIZEMASK)
+
+/* ...and for the drivers/sound files... */
+
+#define MY_IOC_IN		(MY_IOC_WRITE << MY_IOC_DIRSHIFT)
+#define MY_IOC_OUT		(MY_IOC_READ << MY_IOC_DIRSHIFT)
+#define MY_IOC_INOUT	((MY_IOC_WRITE|MY_IOC_READ) << MY_IOC_DIRSHIFT)
+#define MY_IOCSIZE_MASK	(MY_IOC_SIZEMASK << MY_IOC_SIZESHIFT)
+#define MY_IOCSIZE_SHIFT	(MY_IOC_SIZESHIFT)
+
+
 
 
 
@@ -28,21 +128,21 @@ enum {
 };
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #ifdef BINDER_IPC_32BIT
-typedef __u32 binder_size_t;
-typedef __u32 binder_uintptr_t;
+typedef unsigned int binder_size_t;
+typedef unsigned int *binder_uintptr_t;
 #else
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
-typedef __u64 binder_size_t;
-typedef __u64 binder_uintptr_t;
+typedef unsigned long long binder_size_t;
+typedef unsigned long long *binder_uintptr_t;
 #endif
 struct flat_binder_object {
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- __u32 type;
- __u32 flags;
+ unsigned int type;
+ unsigned int flags;
  union {
  binder_uintptr_t binder;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- __u32 handle;
+ unsigned int handle;
  };
  binder_uintptr_t cookie;
 };
@@ -58,7 +158,7 @@ struct binder_write_read {
 };
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 struct binder_version {
- __s32 protocol_version;
+ int protocol_version;
 };
 #ifdef BINDER_IPC_32BIT
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
@@ -67,14 +167,14 @@ struct binder_version {
 #define BINDER_CURRENT_PROTOCOL_VERSION 8
 #endif
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
-#define BINDER_WRITE_READ _IOWR('b', 1, struct binder_write_read)
-#define BINDER_SET_IDLE_TIMEOUT _IOW('b', 3, __s64)
-#define BINDER_SET_MAX_THREADS _IOW('b', 5, __u32)
-#define BINDER_SET_IDLE_PRIORITY _IOW('b', 6, __s32)
+#define BINDER_WRITE_READ MY_IOWR('b', 1, struct binder_write_read)
+#define BINDER_SET_IDLE_TIMEOUT MY_IOW('b', 3, __s64)
+#define BINDER_SET_MAX_THREADS MY_IOW('b', 5, unsigned int)
+#define BINDER_SET_IDLE_PRIORITY MY_IOW('b', 6, int)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
-#define BINDER_SET_CONTEXT_MGR _IOW('b', 7, __s32)
-#define BINDER_THREAD_EXIT _IOW('b', 8, __s32)
-#define BINDER_VERSION _IOWR('b', 9, struct binder_version)
+#define BINDER_SET_CONTEXT_MGR MY_IOW('b', 7, int)
+#define BINDER_THREAD_EXIT MY_IOW('b', 8, int)
+#define BINDER_VERSION MY_IOWR('b', 9, struct binder_version)
 enum transaction_flags {
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
  TF_ONE_WAY = 0x01,
@@ -85,14 +185,14 @@ enum transaction_flags {
 };
 struct binder_transaction_data {
  union {
- __u32 handle;
+ unsigned int handle;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
  binder_uintptr_t ptr;
  } target;
  binder_uintptr_t cookie;
- __u32 code;
+ unsigned int code;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- __u32 flags;
+ unsigned int flags;
  pid_t sender_pid;
  uid_t sender_euid;
  binder_size_t data_size;
@@ -104,7 +204,7 @@ struct binder_transaction_data {
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
  binder_uintptr_t offsets;
  } ptr;
- __u8 buf[8];
+ unsigned char buf[8];
  } data;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 };
@@ -114,70 +214,72 @@ struct binder_ptr_cookie {
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 };
 struct binder_handle_cookie {
- __u32 handle;
+ unsigned int handle;
  binder_uintptr_t cookie;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 } __attribute__((packed));
 struct binder_pri_desc {
- __s32 priority;
- __u32 desc;
+ int priority;
+ unsigned int desc;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 };
 struct binder_pri_ptr_cookie {
- __s32 priority;
+ int priority;
  binder_uintptr_t ptr;
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
  binder_uintptr_t cookie;
 };
-enum binder_driver_return_protocol {
- BR_ERROR = _IOR('r', 0, __s32),
+// binder_driver_return_protocol 
+#define BR_ERROR MY_IOR('r', 0, int)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BR_OK = _IO('r', 1),
- BR_TRANSACTION = _IOR('r', 2, struct binder_transaction_data),
- BR_REPLY = _IOR('r', 3, struct binder_transaction_data),
- BR_ACQUIRE_RESULT = _IOR('r', 4, __s32),
+#define BR_OK MY_IO('r', 1)
+#define BR_TRANSACTION MY_IOR('r', 2, struct binder_transaction_data)
+#define BR_REPLY MY_IOR('r', 3, struct binder_transaction_data)
+#define BR_ACQUIRE_RESULT MY_IOR('r', 4, int)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BR_DEAD_REPLY = _IO('r', 5),
- BR_TRANSACTION_COMPLETE = _IO('r', 6),
- BR_INCREFS = _IOR('r', 7, struct binder_ptr_cookie),
- BR_ACQUIRE = _IOR('r', 8, struct binder_ptr_cookie),
+#define BR_DEAD_REPLY MY_IO('r', 5)
+#define BR_TRANSACTION_COMPLETE MY_IO('r', 6)
+#define BR_INCREFS MY_IOR('r', 7, struct binder_ptr_cookie)
+#define BR_ACQUIRE MY_IOR('r', 8, struct binder_ptr_cookie)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BR_RELEASE = _IOR('r', 9, struct binder_ptr_cookie),
- BR_DECREFS = _IOR('r', 10, struct binder_ptr_cookie),
- BR_ATTEMPT_ACQUIRE = _IOR('r', 11, struct binder_pri_ptr_cookie),
- BR_NOOP = _IO('r', 12),
+#define BR_RELEASE MY_IOR('r', 9, struct binder_ptr_cookie)
+#define BR_DECREFS MY_IOR('r', 10, struct binder_ptr_cookie)
+#define BR_ATTEMPT_ACQUIRE MY_IOR('r', 11, struct binder_pri_ptr_cookie)
+#define BR_NOOP MY_IO('r', 12)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BR_SPAWN_LOOPER = _IO('r', 13),
- BR_FINISHED = _IO('r', 14),
- BR_DEAD_BINDER = _IOR('r', 15, binder_uintptr_t),
- BR_CLEAR_DEATH_NOTIFICATION_DONE = _IOR('r', 16, binder_uintptr_t),
+#define BR_SPAWN_LOOPER MY_IO('r', 13)
+#define BR_FINISHED MY_IO('r', 14)
+#define BR_DEAD_BINDER MY_IOR('r', 15, binder_uintptr_t)
+#define BR_CLEAR_DEATH_NOTIFICATION_DONE MY_IOR('r', 16, binder_uintptr_t)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BR_FAILED_REPLY = _IO('r', 17),
-};
-enum binder_driver_command_protocol {
- BC_TRANSACTION = _IOW('c', 0, struct binder_transaction_data),
+#define BR_FAILED_REPLY MY_IO('r', 17)
+
+
+// binder_driver_command_protocol 
+#define BC_TRANSACTION MY_IOW('c', 0, struct binder_transaction_data)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BC_REPLY = _IOW('c', 1, struct binder_transaction_data),
- BC_ACQUIRE_RESULT = _IOW('c', 2, __s32),
- BC_FREE_BUFFER = _IOW('c', 3, binder_uintptr_t),
- BC_INCREFS = _IOW('c', 4, __u32),
+#define BC_REPLY MY_IOW('c', 1, struct binder_transaction_data)
+#define BC_ACQUIRE_RESULT MY_IOW('c', 2, int)
+#define BC_FREE_BUFFER MY_IOW('c', 3, binder_uintptr_t)
+#define BC_INCREFS MY_IOW('c', 4, unsigned int)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BC_ACQUIRE = _IOW('c', 5, __u32),
- BC_RELEASE = _IOW('c', 6, __u32),
- BC_DECREFS = _IOW('c', 7, __u32),
- BC_INCREFS_DONE = _IOW('c', 8, struct binder_ptr_cookie),
+#define BC_ACQUIRE MY_IOW('c', 5, unsigned int)
+#define BC_RELEASE MY_IOW('c', 6, unsigned int)
+#define BC_DECREFS MY_IOW('c', 7, unsigned int)
+#define BC_INCREFS_DONE MY_IOW('c', 8, struct binder_ptr_cookie)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BC_ACQUIRE_DONE = _IOW('c', 9, struct binder_ptr_cookie),
- BC_ATTEMPT_ACQUIRE = _IOW('c', 10, struct binder_pri_desc),
- BC_REGISTER_LOOPER = _IO('c', 11),
- BC_ENTER_LOOPER = _IO('c', 12),
+#define BC_ACQUIRE_DONE MY_IOW('c', 9, struct binder_ptr_cookie)
+#define BC_ATTEMPT_ACQUIRE MY_IOW('c', 10, struct binder_pri_desc)
+#define BC_REGISTER_LOOPER MY_IO('c', 11)
+#define BC_ENTER_LOOPER MY_IO('c', 12)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
- BC_EXIT_LOOPER = _IO('c', 13),
- BC_REQUEST_DEATH_NOTIFICATION = _IOW('c', 14, struct binder_handle_cookie),
- BC_CLEAR_DEATH_NOTIFICATION = _IOW('c', 15, struct binder_handle_cookie),
- BC_DEAD_BINDER_DONE = _IOW('c', 16, binder_uintptr_t),
+#define BC_EXIT_LOOPER MY_IO('c', 13)
+#define BC_REQUEST_DEATH_NOTIFICATION MY_IOW('c', 14, struct binder_handle_cookie)
+#define BC_CLEAR_DEATH_NOTIFICATION MY_IOW('c', 15, struct binder_handle_cookie)
+#define BC_DEAD_BINDER_DONE MY_IOW('c', 16, binder_uintptr_t)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
-};
+
+
 
 
 struct BinderState
@@ -239,7 +341,7 @@ public:
 	BinderState *binderOpen(unsigned int mapsize);
 	void binderClose(void);
 
-	int binderWrite(void *data, size_t len);
+	int binderWrite(void *data, int len);
 	
 	/* initiate a blocking binder call
 	 * - returns zero on success
@@ -259,7 +361,7 @@ public:
 	void binderAcquire(unsigned int target);
 	void binderRelease(unsigned int target);
 
-	int binderParse(Parcel *data, uintptr_t ptr, size_t size);
+	int binderParse(Parcel *data, unsigned char *ptr, int size);
 	virtual void binderDeath(void *ptr);
 	void binderLinkToDeath(unsigned int target, struct BinderDeath *death);
 	

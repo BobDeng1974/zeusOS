@@ -1,16 +1,12 @@
-#include <inttypes.h>
+#include <binder/Binder.h>
+#include <sys/ioctl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <linux/types.h>
-#include<stdbool.h>
+#include <stdbool.h>
 #include <string.h>
-#include <pthread.h>
-
-#include "binder.h"
 
 #define MAX_BIO_SIZE (1 << 30)
 
@@ -25,90 +21,23 @@
 #endif
 
 
-
-#if TRACE
-void hexdump(void *_data, size_t len)
-{
-    unsigned char *data = _data;
-    size_t count;
-
-    for (count = 0; count < len; count++) {
-        if ((count & 15) == 0)
-            fprintf(stderr,"%04zu:", count);
-        fprintf(stderr," %02x %c", *data,
-                (*data < 32) || (*data > 126) ? '.' : *data);
-        data++;
-        if ((count & 15) == 15)
-            fprintf(stderr,"\n");
-    }
-    if ((count & 15) != 0)
-        fprintf(stderr,"\n");
-}
-
-void binder_dump_txn(struct binder_transaction_data *txn)
-{
-    struct flat_binder_object *obj;
-    binder_size_t *offs = (binder_size_t *)(uintptr_t)txn->data.ptr.offsets;
-    size_t count = txn->offsets_size / sizeof(binder_size_t);
-
-    fprintf(stderr,"  target %016"PRIx64"  cookie %016"PRIx64"  code %08x  flags %08x\n",
-            (uint64_t)txn->target.ptr, (uint64_t)txn->cookie, txn->code, txn->flags);
-    fprintf(stderr,"  pid %8d  uid %8d  data %"PRIu64"  offs %"PRIu64"\n",
-            txn->sender_pid, txn->sender_euid, (uint64_t)txn->data_size, (uint64_t)txn->offsets_size);
-    hexdump((void *)(uintptr_t)txn->data.ptr.buffer, txn->data_size);
-    while (count--) {
-        obj = (struct flat_binder_object *) (((char*)(uintptr_t)txn->data.ptr.buffer) + *offs++);
-        fprintf(stderr,"  - type %08x  flags %08x  ptr %016"PRIx64"  cookie %016"PRIx64"\n",
-                obj->type, obj->flags, (uint64_t)obj->binder, (uint64_t)obj->cookie);
-    }
-}
-
-#define NAME(n) case n: return #n
-const char *cmd_name(uint32_t cmd)
-{
-    switch(cmd) {
-        NAME(BR_NOOP);
-        NAME(BR_TRANSACTION_COMPLETE);
-        NAME(BR_INCREFS);
-        NAME(BR_ACQUIRE);
-        NAME(BR_RELEASE);
-        NAME(BR_DECREFS);
-        NAME(BR_TRANSACTION);
-        NAME(BR_REPLY);
-        NAME(BR_FAILED_REPLY);
-        NAME(BR_DEAD_REPLY);
-        NAME(BR_DEAD_BINDER);		
-    default: return "???";
-    }
-}
-#else
-#define hexdump(a,b) do{} while (0)
-#define binder_dump_txn(txn)  do{} while (0)
-#endif
-
-#define BIO_F_SHARED    0x01  /* needs to be buffer freed */
-#define BIO_F_OVERFLOW  0x02  /* ran out of space */
-#define BIO_F_IOERROR   0x04
-#define BIO_F_MALLOCED  0x08  /* needs to be free()'d */
-
-
 void binder_thread_loop(BinderState *bs, Binder *binder)
 {
     int res;
     struct binder_write_read bwr;
-    uint32_t readbuf[32];
+    unsigned int readbuf[32];
 
     bwr.write_size = 0;
     bwr.write_consumed = 0;
     bwr.write_buffer = 0;
 
     readbuf[0] = BC_REGISTER_LOOPER;
-    binder->binderWrite(readbuf, sizeof(uint32_t));
+    binder->binderWrite(readbuf, sizeof(unsigned int));
 
     for (;;) {
         bwr.read_size = sizeof(readbuf);
         bwr.read_consumed = 0;
-        bwr.read_buffer = (uintptr_t) readbuf;
+        bwr.read_buffer = (binder_uintptr_t) readbuf;
 
         res = ioctl(bs->fd, BINDER_WRITE_READ, &bwr);
 
@@ -117,7 +46,7 @@ void binder_thread_loop(BinderState *bs, Binder *binder)
             break;
         }
 
-        res = binder->binderParse(NULL, (uintptr_t) readbuf, bwr.read_consumed);
+        res = binder->binderParse(NULL, (unsigned char *)readbuf, bwr.read_consumed);
         if (res == 0) {
             ALOGE("binder_loop: unexpected reply?!\n");
             break;
@@ -130,8 +59,10 @@ void binder_thread_loop(BinderState *bs, Binder *binder)
 }
 
 
-static void * binder_thread_routine(BinderThreadDesc *btd)
+static void * binder_thread_routine(void *ptr)
 {
+	BinderThreadDesc *btd = (BinderThreadDesc *)ptr;
+
 	binder_thread_loop(btd->bs, btd->binder);
 	return NULL;
 }
@@ -200,12 +131,12 @@ int Binder::binderCall(Parcel& msg, Parcel& reply, unsigned int target, unsigned
 	int res;
 	struct binder_write_read bwr;
 	struct {
-		uint32_t cmd;
+		unsigned int cmd;
 		struct binder_transaction_data txn;
 	} __attribute__((packed)) writebuf;
 	unsigned readbuf[32];
 
-	if (msg.mBio.flags & BIO_F_OVERFLOW) {
+	if (msg.mBio->flags & BIO_F_OVERFLOW) {
 		fprintf(stderr,"binder: txn buffer overflow\n");
 		goto fail;
 	}
@@ -214,20 +145,19 @@ int Binder::binderCall(Parcel& msg, Parcel& reply, unsigned int target, unsigned
 	writebuf.txn.target.handle = target;
 	writebuf.txn.code = code;
 	writebuf.txn.flags = flags;
-	writebuf.txn.data_size = msg.mBio.data - msg.mBio.data0;
-	writebuf.txn.offsets_size = ((char*) msg.mBio.offs) - ((char*) msg.mBio.offs0);
-	writebuf.txn.data.ptr.buffer = (uintptr_t)msg.mBio.data0;
-	writebuf.txn.data.ptr.offsets = (uintptr_t)msg.mBio.offs0;
+	writebuf.txn.data_size = msg.mBio->data - msg.mBio->data0;
+	writebuf.txn.offsets_size = ((char*) msg.mBio->offs) - ((char*) msg.mBio->offs0);
+	writebuf.txn.data.ptr.buffer = (binder_uintptr_t)msg.mBio->data0;
+	writebuf.txn.data.ptr.offsets = (binder_uintptr_t)msg.mBio->offs0;
 
 	bwr.write_size = sizeof(writebuf);
 	bwr.write_consumed = 0;
-	bwr.write_buffer = (uintptr_t) &writebuf;
+	bwr.write_buffer = (binder_uintptr_t) &writebuf;
 
-	hexdump(msg.mBio.data0, msg.mBio.data - msg.mBio.data0);
 	for (;;) {
 		bwr.read_size = sizeof(readbuf);
 		bwr.read_consumed = 0;
-		bwr.read_buffer = (uintptr_t) readbuf;
+		bwr.read_buffer = (binder_uintptr_t) readbuf;
 
 		res = ioctl(mBinderState->fd, BINDER_WRITE_READ, &bwr);
 
@@ -236,26 +166,26 @@ int Binder::binderCall(Parcel& msg, Parcel& reply, unsigned int target, unsigned
 			goto fail;
 		}
 
-		res = binderParse(&reply, (uintptr_t) readbuf, bwr.read_consumed);
+		res = binderParse(&reply, (unsigned char *)readbuf, bwr.read_consumed);
 		if (res == 0) return 0;
 		if (res < 0) goto fail;
 	}
 
 fail:
-	memset(&reply.mBio, 0, sizeof(reply.mBio));
-	reply.mBio.flags |= BIO_F_IOERROR;
+	memset(reply.mBio, 0, sizeof(struct BinderIO));
+	reply.mBio->flags |= BIO_F_IOERROR;
 	return -1;
 
 }
 
-int Binder::binderWrite(void *data, size_t len)
+int Binder::binderWrite(void *data, int len)
 {
     struct binder_write_read bwr;
     int res;
 
     bwr.write_size = len;
     bwr.write_consumed = 0;
-    bwr.write_buffer = (uintptr_t) data;
+    bwr.write_buffer = (binder_uintptr_t) data;
     bwr.read_size = 0;
     bwr.read_consumed = 0;
     bwr.read_buffer = 0;
@@ -271,22 +201,22 @@ int Binder::binderWrite(void *data, size_t len)
 void Binder::binderDone(Parcel& msg, Parcel& reply)
 {
     struct {
-        uint32_t cmd;
-        uintptr_t buffer;
+        unsigned int cmd;
+        unsigned int * buffer;
     } __attribute__((packed)) data;
 
-    if (reply.mBio.flags & BIO_F_SHARED) {
+    if (reply.mBio->flags & BIO_F_SHARED) {
         data.cmd = BC_FREE_BUFFER;
-        data.buffer = (uintptr_t) reply.mBio.data0;
+        data.buffer = (unsigned int *) reply.mBio->data0;
         binderWrite(&data, sizeof(data));
-        reply.mBio.flags = 0;
+        reply.mBio->flags = 0;
     }
 }
 
 /* manipulate strong references */
 void Binder::binderAcquire(unsigned int target)
 {
-    uint32_t cmd[2];
+    unsigned int cmd[2];
     cmd[0] = BC_ACQUIRE;
     cmd[1] = target;
     binderWrite(cmd, sizeof(cmd));
@@ -295,7 +225,7 @@ void Binder::binderAcquire(unsigned int target)
 
 void Binder::binderRelease(unsigned int target)
 {
-    uint32_t cmd[2];
+    unsigned int cmd[2];
     cmd[0] = BC_RELEASE;
     cmd[1] = target;
     binderWrite(cmd, sizeof(cmd));
@@ -307,21 +237,48 @@ void Binder::binderDeath(void *ptr)
 }
 
 
-int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
+#define NAME(n) case n: return #n
+const char *cmd_name(unsigned int cmd)
+{
+    switch(cmd) {
+		NAME(BR_FAILED_REPLY);
+		NAME(BR_CLEAR_DEATH_NOTIFICATION_DONE);
+		NAME(BR_DEAD_BINDER);
+		NAME(BR_FINISHED);
+		NAME(BR_SPAWN_LOOPER);
+		NAME(BR_NOOP);
+		NAME(BR_ATTEMPT_ACQUIRE);
+		NAME(BR_DECREFS);
+		NAME(BR_RELEASE);
+		NAME(BR_ACQUIRE);
+		NAME(BR_INCREFS);
+		NAME(BR_TRANSACTION_COMPLETE);
+		NAME(BR_DEAD_REPLY);
+		NAME(BR_ACQUIRE_RESULT);
+		NAME(BR_REPLY);
+		NAME(BR_TRANSACTION);
+		NAME(BR_OK);
+		NAME(BR_ERROR);
+    default: return "???";
+    }
+}
+
+
+int Binder::binderParse(Parcel *data, unsigned char *ptr, int size)
 {
 	int r = 1;
-	uintptr_t end = ptr + (uintptr_t) size;
-	BinderIO *bio = NULL;
+	unsigned char * end = ptr + size;
+	struct BinderIO *bio = NULL;
 
 	if (data) {
-		bio = &data->mBio;
+		bio = data->mBio;
 	}
 
 	while (ptr < end) {
-		uint32_t cmd = *(uint32_t *) ptr;
-		ptr += sizeof(uint32_t);
+		unsigned int cmd = *(unsigned int *) ptr;
+		ptr += sizeof(unsigned int);
 #if TRACE
-		fprintf(stderr,"%s:\n", cmd_name(cmd));
+		fprintf(stderr,"%s:%d\n", cmd_name(cmd), cmd);
 #endif
 		switch(cmd) {
 		case BR_NOOP:
@@ -352,11 +309,10 @@ int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
 		}
 		case BR_TRANSACTION: {
 			struct binder_transaction_data *txn = (struct binder_transaction_data *) ptr;
-			if ((end - ptr) < sizeof(*txn)) {
+			if ((end - ptr) < (int)sizeof(*txn)) {
 				ALOGE("parse: txn too small!\n");
 				return -1;
 			}
-			binder_dump_txn(txn);
 
 			Parcel msg;
 			Parcel reply;
@@ -371,11 +327,11 @@ int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
 		}
 		case BR_REPLY: {
 			struct binder_transaction_data *txn = (struct binder_transaction_data *) ptr;
-			if ((end - ptr) < sizeof(*txn)) {
+			if ((end - ptr) < (int)sizeof(*txn)) {
 				ALOGE("parse: reply too small!\n");
 				return -1;
 			}
-			binder_dump_txn(txn);
+			
 			if (bio) {
 				data->bioInitFromTxn(txn);
 				bio = 0;
@@ -387,7 +343,7 @@ int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
 			break;
 		}
 		case BR_DEAD_BINDER: {
-			struct BinderDeath *death = (struct BinderDeath *)(uintptr_t) *(binder_uintptr_t *)ptr;
+			struct BinderDeath *death = (struct BinderDeath *)(unsigned int *) *(binder_uintptr_t *)ptr;
 			Binder *binder = (Binder *)death->binder;
 			ptr += sizeof(binder_uintptr_t);
 
@@ -413,13 +369,13 @@ int Binder::binderParse(Parcel *data, uintptr_t ptr, size_t size)
 void Binder::binderLinkToDeath(unsigned int target, struct BinderDeath *death)
 {
     struct {
-        uint32_t cmd;
+        unsigned int cmd;
         struct binder_handle_cookie payload;
     } __attribute__((packed)) data;
 
     data.cmd = BC_REQUEST_DEATH_NOTIFICATION;
     data.payload.handle = target;
-    data.payload.cookie = (uintptr_t) death;
+    data.payload.cookie = (binder_uintptr_t) death;
     binderWrite(&data, sizeof(data));
 }
 
@@ -427,19 +383,19 @@ void Binder::binderLoop(void)
 {
     int res;
     struct binder_write_read bwr;
-    uint32_t readbuf[32];
+    unsigned int readbuf[32];
 
     bwr.write_size = 0;
     bwr.write_consumed = 0;
     bwr.write_buffer = 0;
 
     readbuf[0] = BC_ENTER_LOOPER;
-    binderWrite(readbuf, sizeof(uint32_t));
+    binderWrite(readbuf, sizeof(unsigned int));
 
     for (;;) {
         bwr.read_size = sizeof(readbuf);
         bwr.read_consumed = 0;
-        bwr.read_buffer = (uintptr_t) readbuf;
+        bwr.read_buffer = (binder_uintptr_t) readbuf;
 
         res = ioctl(mBinderState->fd, BINDER_WRITE_READ, &bwr);
 
@@ -448,7 +404,7 @@ void Binder::binderLoop(void)
             break;
         }
 
-        res = binderParse(NULL, (uintptr_t) readbuf, bwr.read_consumed);
+        res = binderParse(NULL, (unsigned char *) readbuf, bwr.read_consumed);
         if (res == 0) {
             ALOGE("binder_loop: unexpected reply?!\n");
             break;
@@ -476,9 +432,9 @@ void Binder::binderSetMaxthreads(int threads)
 void Binder::binderSendReply(Parcel& reply, binder_uintptr_t buffer_to_free, int status)
 {
     struct {
-        uint32_t cmd_free;
+        unsigned int cmd_free;
         binder_uintptr_t buffer;
-        uint32_t cmd_reply;
+        unsigned int cmd_reply;
         struct binder_transaction_data txn;
     } __attribute__((packed)) data;
 
@@ -492,14 +448,14 @@ void Binder::binderSendReply(Parcel& reply, binder_uintptr_t buffer_to_free, int
         data.txn.flags = TF_STATUS_CODE;
         data.txn.data_size = sizeof(int);
         data.txn.offsets_size = 0;
-        data.txn.data.ptr.buffer = (uintptr_t)&status;
+        data.txn.data.ptr.buffer = (binder_uintptr_t)&status;
         data.txn.data.ptr.offsets = 0;
     } else {
         data.txn.flags = 0;
-        data.txn.data_size = reply.mBio.data - reply.mBio.data0;
-        data.txn.offsets_size = ((char*) reply.mBio.offs) - ((char*) reply.mBio.offs0);
-        data.txn.data.ptr.buffer = (uintptr_t)reply.mBio.data0;
-        data.txn.data.ptr.offsets = (uintptr_t)reply.mBio.offs0;
+        data.txn.data_size = reply.mBio->data - reply.mBio->data0;
+        data.txn.offsets_size = ((char*) reply.mBio->offs) - ((char*) reply.mBio->offs0);
+        data.txn.data.ptr.buffer = (binder_uintptr_t)reply.mBio->data0;
+        data.txn.data.ptr.offsets = (binder_uintptr_t)reply.mBio->offs0;
     }
     binderWrite(&data, sizeof(data));
 }

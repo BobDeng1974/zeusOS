@@ -16,16 +16,16 @@ struct BinderRef {
 
 class IServiceManager : public Binder{
 public:
-	virtual int getService(const unsigned short *str) = 0;
-	virtual void addService(const unsigned short *str, void *ptr) = 0;
+	virtual int getService(const unsigned char *str) = 0;
+	virtual int addService(const unsigned char *str, void *ptr) = 0;
 	
 };
 
 
 class BnServiceManager : public IServiceManager {
 public:
-	virtual int getService(const unsigned short *name);
-	virtual int addService(const unsigned short *name, void *ptr);
+	virtual int getService(const unsigned char *name);
+	virtual int addService(const unsigned char *name, void *ptr);
 	
 	virtual void binderDeath(void *ptr);
 
@@ -39,10 +39,10 @@ private:
 
 class BpServiceManager : public IServiceManager {
 public:
-	virtual int getService(const unsigned short *name) ;
-	virtual int addService(const unsigned short *name, void *ptr);
+	virtual int getService(const unsigned char *name) ;
+	virtual int addService(const unsigned char *name, void *ptr);
 
-	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply){/* nothing */}
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply){return 0;/* nothing */}
 
 private:
 	

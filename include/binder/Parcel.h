@@ -1,31 +1,34 @@
 #ifndef __PARCEL_H__
 #define __PARCEL_H__
+class Parcel;
 
-#include <linux/types.h>
+
 #include <binder/Binder.h>
-#include <string>
+
 
 class Parcel {
 public:
 	Parcel();
 	virtual ~Parcel();
-	void Parcel::bioInitFromTxn(struct binder_transaction_data *txn);
+	void bioInitFromTxn(struct binder_transaction_data *txn);
 	void *bioAlloc(unsigned int size);
 	struct flat_binder_object *bioAllocObj(void);
 	void putUint32(unsigned int iVal);
 	void putFd(unsigned int iFd);
 	void putObj(void *ptr);
 	void putRef(unsigned int iHandle);
+	void putString8(const unsigned char *str);
 	void putString16(const unsigned short *str);
-	void putString16_X(const unsigned short *str);
+	void putString16_X(const unsigned short *_str);
 	unsigned int getUint32(void);
+	unsigned char *getString8(unsigned int *size);
 	unsigned short *getString16(unsigned int *size);
 	unsigned int getFd(void);
 	unsigned int getRef(void);
 	
 	
 
-	BinderIO mBio;
+	struct BinderIO *mBio;
 private:
 	void *get(unsigned int size);
 	struct flat_binder_object *getObj(void);

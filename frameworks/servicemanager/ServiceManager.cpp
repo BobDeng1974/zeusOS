@@ -50,40 +50,8 @@ int str16eq(const uint16_t *a, const char *b)
     return 1;
 }
 
-static char *service_manager_context;
 
-static bool check_mac_perms(pid_t spid, const char *tctx, const char *perm, const char *name)
-{
-    return true;
-}
 
-static bool check_mac_perms_from_getcon(pid_t spid, const char *perm)
-{
-    return true;
-}
-
-static bool check_mac_perms_from_lookup(pid_t spid, const char *perm, const char *name)
-{
-    return true;
-}
-
-static int svc_can_register(const uint16_t *name, size_t name_len, pid_t spid)
-{
-    const char *perm = "add";
-    return check_mac_perms_from_lookup(spid, perm, str8(name, name_len)) ? 1 : 0;
-}
-
-static int svc_can_list(pid_t spid)
-{
-    const char *perm = "list";
-    return check_mac_perms_from_getcon(spid, perm) ? 1 : 0;
-}
-
-static int svc_can_find(const uint16_t *name, size_t name_len, pid_t spid)
-{
-    const char *perm = "find";
-    return check_mac_perms_from_lookup(spid, perm, str8(name, name_len)) ? 1 : 0;
-}
 
 struct svcinfo
 {
@@ -92,36 +60,36 @@ struct svcinfo
     BinderDeath death;
     int allow_isolated;
     size_t len;
-    uint16_t name[0];
+    unsigned char name[0];
 };
 
 struct svcinfo *svclist = NULL;
 
-struct svcinfo *find_svc(const uint16_t *s16, size_t len)
+struct svcinfo *find_svc(const unsigned char *name, size_t len)
 {
     struct svcinfo *si;
 
     for (si = svclist; si; si = si->next) {
         if ((len == si->len) &&
-            !memcmp(s16, si->name, len * sizeof(uint16_t))) {
+            !memcmp(name, si->name, len)) {
             return si;
         }
     }
     return NULL;
 }
 
-uint16_t svcmgr_id[] = {
+unsigned char svcmgr_id[] = {
     'a','n','d','r','o','i','d','.','o','s','.',
     'I','S','e','r','v','i','c','e','M','a','n','a','g','e','r'
 };
 
 
-int BnServiceManager::getService(const unsigned short *name)
+int BnServiceManager::getService(const unsigned char *name)
 {
     struct svcinfo *si;
 	int len;
 
-	len = strlen(name);
+	len = strlen((char *)name);
     si = find_svc(name, len);
 
     if (si && si->handle) {
@@ -132,10 +100,10 @@ int BnServiceManager::getService(const unsigned short *name)
 
 }
 
-int BnServiceManager::addService(const unsigned short *name, void *ptr)
+int BnServiceManager::addService(const unsigned char *name, void *ptr)
 {
     struct svcinfo *si;
-	BinderRef *ptBinderRef = (BinderRef *)ptr;
+	struct BinderRef *ptBinderRef = (struct BinderRef *)ptr;
 
 
     if (!ptBinderRef->handle || (ptBinderRef->len == 0) || (ptBinderRef->len > 127))
@@ -145,19 +113,19 @@ int BnServiceManager::addService(const unsigned short *name, void *ptr)
     si = find_svc(name, ptBinderRef->len);
     if (si) {
         if (si->handle) {
-            ALOGE("add_service('%s',%x) uid=%d - ALREADY REGISTERED, OVERRIDE\n", str8(name, ptBinderRef->len), ptBinderRef->handle, ptBinderRef->sender_euid);
+            ALOGE("add_service('%s',%x) uid=%d - ALREADY REGISTERED, OVERRIDE\n", name, ptBinderRef->handle, ptBinderRef->sender_euid);
             binderDeath((void *)si);
         }
         si->handle = ptBinderRef->handle;
     } else {
-        si = malloc(sizeof(*si) + (ptBinderRef->len + 1) * sizeof(unsigned short));
+        si = (struct svcinfo *)malloc(sizeof(*si) + (ptBinderRef->len + 1) * sizeof(unsigned short));
         if (!si) {
-            ALOGE("add_service('%s',%x) uid=%d - OUT OF MEMORY\n", str8(name, ptBinderRef->len), ptBinderRef->handle, ptBinderRef->sender_euid);
+            ALOGE("add_service('%s',%x) uid=%d - OUT OF MEMORY\n", name, ptBinderRef->handle, ptBinderRef->sender_euid);
             return -1;
         }
         si->handle = ptBinderRef->handle;
         si->len = ptBinderRef->len;
-        memcpy(si->name, name, (ptBinderRef->len + 1) * sizeof(unsigned short));
+        memcpy(si->name, name, (ptBinderRef->len + 1));
         si->name[ptBinderRef->len] = '\0';
 		si->death.binder = this;
         si->death.ptr = si;
@@ -166,7 +134,7 @@ int BnServiceManager::addService(const unsigned short *name, void *ptr)
         svclist = si;
     }
 
-    ALOGI("add_service('%s'), handle = %d\n", str8(name, ptBinderRef->len), ptBinderRef->handle);
+    ALOGI("add_service('%s'), handle = %d\n", name, ptBinderRef->handle);
 
     binderAcquire(ptBinderRef->handle);
     binderLinkToDeath(ptBinderRef->handle, &si->death);
@@ -178,7 +146,7 @@ void BnServiceManager::binderDeath(void *ptr)
 {
     struct svcinfo *si = (struct svcinfo* ) ptr;
 
-    ALOGI("service '%s' died\n", str8(si->name, si->len));
+    ALOGI("service '%s' died\n", si->name);
     if (si->handle) {
         binderRelease(si->handle);
 		
@@ -190,11 +158,11 @@ void BnServiceManager::binderDeath(void *ptr)
 
 int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply)
 {
-    struct svcinfo *si;
-    uint16_t *name;
-    size_t len;
-    uint32_t handle;
-    uint32_t strict_policy;
+	struct BinderRef tBinderRef;
+    unsigned char *name;
+    unsigned int len;
+    unsigned int handle;
+    unsigned int strict_policy;
     int allow_isolated;
 
 
@@ -205,15 +173,15 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
         return 0;
 
 
-    strict_policy = msg.getUint32();
-	name = msg.getString16(&len);
+    strict_policy = msg->getUint32();
+	name = msg->getString8(&len);
     if (name == NULL) {
         return -1;
     }
 
-    if ((len != (sizeof(svcmgr_id) / 2)) ||
+    if ((len != sizeof(svcmgr_id)) ||
         memcmp(svcmgr_id, name, sizeof(svcmgr_id))) {
-        fprintf(stderr,"invalid id %s\n", str8(name, len));
+        fprintf(stderr,"invalid id %s\n", name);
         return -1;
     }
 
@@ -221,29 +189,28 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
     switch(txn->code) {
     case SVC_MGR_GET_SERVICE:
     case SVC_MGR_CHECK_SERVICE:
-		name = msg.getString16(&len);
+		name = msg->getString8(&len);
         if (name == NULL) {
             return -1;
         }
-		BinderRef tBinderRef;
+
 		tBinderRef.len = len;
 		tBinderRef.sender_euid = txn->sender_euid;
 		tBinderRef.sender_pid = txn->sender_pid;
         handle = getService(name);
         if (!handle)
             break;
-		reply.putRef(handle);
+		reply->putRef(handle);
         return 0;
 
     case SVC_MGR_ADD_SERVICE:
-		name = msg.getString16(&len);
+		name = msg->getString8(&len);
         if (name == NULL) {
             return -1;
         }
-		handle = msg.getRef();
-		allow_isolated = msg.getUint32() ? 1 : 0;
+		handle = msg->getRef();
+		allow_isolated = msg->getUint32() ? 1 : 0;
 
-		BinderRef tBinderRef;
 		tBinderRef.len = len;
 		tBinderRef.sender_euid = txn->sender_euid;
 		tBinderRef.sender_pid = txn->sender_pid;
@@ -259,23 +226,23 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
         return -1;
     }
 
-	reply.putUint32(0);
+	reply->putUint32(0);
     return 0;
 
 }
 
 
-int BpServiceManager::getService(const unsigned short *name)
+int BpServiceManager::getService(const unsigned char *name)
 {
     uint32_t handle;
 	Parcel msg, reply;
 
 	msg.putUint32(0);
-	msg.putString16_X(SVC_MGR_NAME);
-	msg.putString16_X(name);
+	msg.putString8((const unsigned char *)SVC_MGR_NAME);
+	msg.putString8(name);
 
 
-    if (binderCall(&msg, &reply, BINDER_SERVICE_MANAGER, SVC_MGR_CHECK_SERVICE, 0))
+    if (binderCall(msg, reply, BINDER_SERVICE_MANAGER, SVC_MGR_CHECK_SERVICE, 0))
         return 0;
 
 	handle = reply.getRef();
@@ -283,29 +250,29 @@ int BpServiceManager::getService(const unsigned short *name)
     if (handle)
         binderAcquire(handle);
 
-    binderDone(&msg, &reply);
+    binderDone(msg, reply);
 
     return handle;
 
 }
 
-int BpServiceManager::addService(const unsigned short *name, void *ptr)
+int BpServiceManager::addService(const unsigned char *name, void *ptr)
 {
     int status;
 	Parcel msg, reply;
 
 	msg.putUint32(0);
-	msg.putString16_X(SVC_MGR_NAME);
-	msg.putString16_X(name);
+	msg.putString8((const unsigned char *)SVC_MGR_NAME);
+	msg.putString8(name);
 	msg.putObj(ptr);
 
 
-	if (binderCall(&msg, &reply, BINDER_SERVICE_MANAGER, SVC_MGR_ADD_SERVICE, 0))
+	if (binderCall(msg, reply, BINDER_SERVICE_MANAGER, SVC_MGR_ADD_SERVICE, 0))
 		return -1;
 
 	status = reply.getUint32();
 
-    binderDone(&msg, &reply);
+    binderDone(msg, reply);
 
 	return status;
 }

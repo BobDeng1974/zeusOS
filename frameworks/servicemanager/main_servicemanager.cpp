@@ -1,5 +1,5 @@
 #include <frameworks/ServiceManager.h>
-
+#include <stdio.h>
 
 int main(int argc, char **argv)
 {
@@ -7,6 +7,7 @@ int main(int argc, char **argv)
 
 	serviceManager->binderSetMaxthreads(4);
 	serviceManager->binderBecomeContextManager();
+	
 
 	serviceManager->binderLoop();
 	return 0;

@@ -9,11 +9,12 @@
 
 Parcel::Parcel()
 {
-	unsigned int iMax = 1024;
+	int iMax = 1024;
 	int iMaxOffs = 4;
 	int n = iMaxOffs * sizeof(int);
 
 	mIoData = (unsigned char *)new char[iMax];
+	mBio = new BinderIO();
 
     if (n > iMax) {
         mBio->flags = BIO_F_OVERFLOW;
@@ -23,7 +24,7 @@ Parcel::Parcel()
     }
 
     mBio->data = mBio->data0 = (char *) mIoData + n;
-    mBio->offs = mBio->offs0 = mIoData;
+    mBio->offs = mBio->offs0 = (binder_size_t *)mIoData;
     mBio->data_avail = iMax - n;
     mBio->offs_avail = iMaxOffs;
     mBio->flags = 0;
@@ -34,6 +35,7 @@ Parcel::Parcel()
 Parcel::~Parcel()
 {
 	delete mIoData;
+	delete mBio;
 }
 
 void Parcel::bioInitFromTxn(struct binder_transaction_data *txn)
@@ -49,7 +51,7 @@ void Parcel::bioInitFromTxn(struct binder_transaction_data *txn)
 void *Parcel::bioAlloc(unsigned int size)
 {
     size = (size + 3) & (~3);
-    if (size > mBio->data_avail) {
+    if ((int)size > mBio->data_avail) {
         mBio->flags |= BIO_F_OVERFLOW;
         return NULL;
     } else {
@@ -65,7 +67,7 @@ struct flat_binder_object *Parcel::bioAllocObj(void)
 {
     struct flat_binder_object *obj;
 
-    obj = bio_alloc(mBio, sizeof(*obj));
+    obj = (struct flat_binder_object *)bioAlloc(sizeof(*obj));
 
     if (obj && mBio->offs_avail) {
         mBio->offs_avail--;
@@ -80,7 +82,7 @@ struct flat_binder_object *Parcel::bioAllocObj(void)
 
 void Parcel::putUint32(unsigned int iVal)
 {
-    unsigned int *ptr = bioAlloc(sizeof(iVal));
+    unsigned int *ptr = (unsigned int *)bioAlloc(sizeof(iVal));
     if (ptr)
         *ptr = iVal;
 }
@@ -89,7 +91,7 @@ void Parcel::putFd(unsigned int iFd)
 {
     struct flat_binder_object *obj;
 
-    obj = bioAllocObj(mBio);
+    obj = bioAllocObj();
     if (!obj)
         return;
 
@@ -102,7 +104,7 @@ void Parcel::putObj(void *ptr)
 {
     struct flat_binder_object *obj;
 
-    obj = bioAllocObj(mBio);
+    obj = bioAllocObj();
     if (!obj)
         return;
 
@@ -117,9 +119,9 @@ void Parcel::putRef(unsigned int iHandle)
     struct flat_binder_object *obj;
 
     if (iHandle)
-        obj = bioAllocObj(mBio);
+        obj = bioAllocObj();
     else
-        obj = bioAlloc(mBio, sizeof(*obj));
+        obj = (struct flat_binder_object *)bioAlloc(sizeof(*obj));
 
     if (!obj)
         return;
@@ -129,6 +131,34 @@ void Parcel::putRef(unsigned int iHandle)
     obj->handle = iHandle;
     obj->cookie = 0;
 }
+
+void Parcel::putString8(const unsigned char *str)
+{
+    unsigned int len;
+    unsigned char *ptr;
+
+    if (!str) {
+        putUint32(0xffffffff);
+        return;
+    }
+
+    len = 0;
+    while (str[len]) len++;
+
+    if (len >= (MAX_BIO_SIZE / sizeof(unsigned char))) {
+        putUint32(0xffffffff);
+        return;
+    }
+
+    /* Note: The payload will carry 32bit size instead of size_t */
+    putUint32(len);
+    len = (len + 1) * sizeof(unsigned char);
+    ptr = (unsigned char *)bioAlloc(len);
+    if (ptr)
+        memcpy(ptr, str, len);
+
+}
+
 
 void Parcel::putString16(const unsigned short *str)
 {
@@ -151,13 +181,13 @@ void Parcel::putString16(const unsigned short *str)
     /* Note: The payload will carry 32bit size instead of size_t */
     putUint32(len);
     len = (len + 1) * sizeof(unsigned short);
-    ptr = bioAlloc(len);
+    ptr = (unsigned short *)bioAlloc(len);
     if (ptr)
         memcpy(ptr, str, len);
 
 }
 
-void Parcel::putString16_X(const unsigned short *str)
+void Parcel::putString16_X(const unsigned short *_str)
 {
     unsigned char *str = (unsigned char*) _str;
     unsigned int len;
@@ -168,7 +198,7 @@ void Parcel::putString16_X(const unsigned short *str)
         return;
     }
 
-    len = strlen(str);
+    len = strlen((char *)str);
 
     if (len >= (MAX_BIO_SIZE / sizeof(unsigned short))) {
         putUint32(0xffffffff);
@@ -177,7 +207,7 @@ void Parcel::putString16_X(const unsigned short *str)
 
     /* Note: The payload will carry 32bit size instead of size_t */
     putUint32(len);
-    ptr = bioAlloc((len + 1) * sizeof(unsigned short));
+    ptr = (unsigned short *)bioAlloc((len + 1) * sizeof(unsigned short));
     if (!ptr)
         return;
 
@@ -193,23 +223,35 @@ void *Parcel::get(unsigned int size)
 {
     size = (size + 3) & (~3);
 
-    if (mBio.data_avail < size){
-        mBio.data_avail = 0;
-        mBio.flags |= BIO_F_OVERFLOW;
+    if (mBio->data_avail < size){
+        mBio->data_avail = 0;
+        mBio->flags |= BIO_F_OVERFLOW;
         return NULL;
     }  else {
-        void *ptr = mBio.data;
-        mBio.data += size;
-        mBio.data_avail -= size;
+        void *ptr = mBio->data;
+        mBio->data += size;
+        mBio->data_avail -= size;
         return ptr;
     }
 }
 
 unsigned int Parcel::getUint32(void)
 {
-    unsigned int *ptr = get(sizeof(*ptr));
+    unsigned int *ptr = (unsigned int *)get(sizeof(*ptr));
     return ptr ? *ptr : 0;
 }
+
+unsigned char *Parcel::getString8(unsigned int *size)
+{
+    unsigned int len;
+
+    /* Note: The payload will carry 32bit size instead of size_t */
+    len = getUint32();
+    if (size)
+        *size = len;
+    return (unsigned char *)get((len + 1) * sizeof(unsigned char));
+}
+
 
 unsigned short *Parcel::getString16(unsigned int *size)
 {
@@ -219,7 +261,7 @@ unsigned short *Parcel::getString16(unsigned int *size)
     len = getUint32();
     if (size)
         *size = len;
-    return get((len + 1) * sizeof(unsigned short));
+    return (unsigned short *)get((len + 1) * sizeof(unsigned short));
 }
 
 
@@ -231,7 +273,7 @@ struct flat_binder_object *Parcel::getObj(void)
     /* TODO: be smarter about this? */
     for (n = 0; n < mBio->offs_avail; n++) {
         if (mBio->offs[n] == off)
-            return get(sizeof(struct flat_binder_object));
+            return (struct flat_binder_object *)get(sizeof(struct flat_binder_object));
     }
 
     mBio->data_avail = 0;
