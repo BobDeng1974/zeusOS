@@ -46,7 +46,7 @@ void binder_thread_loop(BinderState *bs, Binder *binder)
             break;
         }
 
-        res = binder->binderParse(NULL, (unsigned char *)readbuf, bwr.read_consumed, 1/* callback */);
+        res = binder->binderParse(NULL, (unsigned char *)readbuf, bwr.read_consumed);
         if (res == 0) {
             ALOGE("binder_loop: unexpected reply?!\n");
             break;
@@ -167,7 +167,7 @@ int Binder::binderCall(Parcel& msg, Parcel& reply, unsigned int target, unsigned
 			goto fail;
 		}
 		
-		res = binderParse(&reply, (unsigned char *)readbuf, bwr.read_consumed, 0/* no callback */);
+		res = binderParse(&reply, (unsigned char *)readbuf, bwr.read_consumed);
 		if (res == 0) return 0;
 		if (res < 0) goto fail;
 	}
@@ -265,7 +265,7 @@ const char *cmd_name(unsigned int cmd)
 }
 
 
-int Binder::binderParse(Parcel *data, unsigned char *ptr, int size, int callback)
+int Binder::binderParse(Parcel *data, unsigned char *ptr, int size)
 {
 	int r = 1;
 	unsigned char * end = ptr + size;
@@ -315,15 +315,15 @@ int Binder::binderParse(Parcel *data, unsigned char *ptr, int size, int callback
 				return -1;
 			}
 
-			if (callback) {
-				Parcel msg;
-				Parcel reply;
-				int res;
 
-				msg.bioInitFromTxn(txn);
-				res = onTransact(txn, &msg, &reply);
-				binderSendReply(reply, txn->data.ptr.buffer, res);
-			}
+			Parcel msg;
+			Parcel reply;
+			int res;
+
+			msg.bioInitFromTxn(txn);
+			res = onTransact(txn, &msg, &reply);
+			binderSendReply(reply, txn->data.ptr.buffer, res);
+
 
 			ptr += sizeof(*txn);
 			break;
@@ -407,7 +407,7 @@ void Binder::binderLoop(void)
             break;
         }
 
-        res = binderParse(NULL, (unsigned char *) readbuf, bwr.read_consumed, 1/* callback */);
+        res = binderParse(NULL, (unsigned char *) readbuf, bwr.read_consumed);
         if (res == 0) {
             ALOGE("binder_loop: unexpected reply?!\n");
             break;

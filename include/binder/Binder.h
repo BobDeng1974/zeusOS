@@ -361,7 +361,7 @@ public:
 	void binderAcquire(unsigned int target);
 	void binderRelease(unsigned int target);
 
-	int binderParse(Parcel *data, unsigned char *ptr, int size, int callback);
+	int binderParse(Parcel *data, unsigned char *ptr, int size);
 	virtual void binderDeath(void *ptr);
 	void binderLinkToDeath(unsigned int target, struct BinderDeath *death);
 	
