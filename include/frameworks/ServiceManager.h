@@ -3,6 +3,7 @@
 
 #include <binder/Binder.h>
 #include <binder/Parcel.h>
+#include <binder/Interface.h>
 
 
 
@@ -16,9 +17,10 @@ struct BinderRef {
 
 class IServiceManager : public Binder{
 public:
-	virtual int getService(const unsigned char *str) = 0;
-	virtual int addService(const unsigned char *str, void *ptr) = 0;
-	
+	virtual int getService(const unsigned char *name) = 0;
+	virtual int addService(const unsigned char *name, void *ptr) = 0;
+	DECLARE_META_INTERFACE(ServiceManager);
+
 };
 
 
@@ -30,8 +32,6 @@ public:
 	virtual void binderDeath(void *ptr);
 
 	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply);
-
-private:
 };
 
 
@@ -39,13 +39,15 @@ private:
 
 class BpServiceManager : public IServiceManager {
 public:
+	BpServiceManager(int iHandle){ mTargetHandle = iHandle; }
 	virtual int getService(const unsigned char *name) ;
 	virtual int addService(const unsigned char *name, void *ptr);
-
-	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply){return 0;/* nothing */}
-
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) {return 0;}
 private:
-	
+	BpServiceManager(){}
 };
+
+
+
 
 #endif	//__SERVICEMANAGER_H__

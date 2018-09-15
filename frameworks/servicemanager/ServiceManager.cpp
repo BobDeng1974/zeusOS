@@ -19,38 +19,6 @@
 #include <cutils/log.h>
 #endif
 
-uint32_t svcmgr_handle;
-
-const char *str8(const uint16_t *x, size_t x_len)
-{
-    static char buf[128];
-    size_t max = 127;
-    char *p = buf;
-
-    if (x_len < max) {
-        max = x_len;
-    }
-
-    if (x) {
-        while ((max > 0) && (*x != '\0')) {
-            *p++ = *x++;
-            max--;
-        }
-    }
-    *p++ = 0;
-    return buf;
-}
-
-int str16eq(const uint16_t *a, const char *b)
-{
-    while (*a && *b)
-        if (*a++ != *b++) return 0;
-    if (*a || *b)
-        return 0;
-    return 1;
-}
-
-
 
 
 struct svcinfo
@@ -174,16 +142,7 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
 
 
     strict_policy = msg->getUint32();
-	name = msg->getString8(&len);
-    if (name == NULL) {
-        return -1;
-    }
 
-    if ((len != sizeof(svcmgr_id)) ||
-        memcmp(svcmgr_id, name, sizeof(svcmgr_id))) {
-        fprintf(stderr,"invalid id %s\n", name);
-        return -1;
-    }
 
 
     switch(txn->code) {
@@ -238,11 +197,10 @@ int BpServiceManager::getService(const unsigned char *name)
 	Parcel msg, reply;
 
 	msg.putUint32(0);
-	msg.putString8((const unsigned char *)SVC_MGR_NAME);
 	msg.putString8(name);
 
 
-    if (binderCall(msg, reply, BINDER_SERVICE_MANAGER, SVC_MGR_CHECK_SERVICE, 0))
+    if (binderCall(msg, reply, mTargetHandle, SVC_MGR_CHECK_SERVICE, 0))
         return 0;
 
 	handle = reply.getRef();
@@ -262,12 +220,11 @@ int BpServiceManager::addService(const unsigned char *name, void *ptr)
 	Parcel msg, reply;
 
 	msg.putUint32(0);
-	msg.putString8((const unsigned char *)SVC_MGR_NAME);
 	msg.putString8(name);
 	msg.putObj(ptr);
 
 
-	if (binderCall(msg, reply, BINDER_SERVICE_MANAGER, SVC_MGR_ADD_SERVICE, 0))
+	if (binderCall(msg, reply, mTargetHandle, SVC_MGR_ADD_SERVICE, 0))
 		return -1;
 
 	status = reply.getUint32();
@@ -276,5 +233,8 @@ int BpServiceManager::addService(const unsigned char *name, void *ptr)
 
 	return status;
 }
+
+
+IMPLEMENT_META_INTERFACE(ServiceManager, "servicemanager");
 
 

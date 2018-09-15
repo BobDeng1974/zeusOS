@@ -373,10 +373,13 @@ public:
 
 	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) = 0;
 
-	
+	int mTargetHandle;	
 private:
 	BinderState *mBinderState;
+
+
 };
+
 
 
 #endif

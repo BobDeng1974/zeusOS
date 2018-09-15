@@ -5,30 +5,26 @@
 
 
 
+
 template<typename INTERFACE>
-inline INTERFACE *interface_cast(const Binder *obj)
+inline INTERFACE *interface_cast(int iHandle)
 {
-    return INTERFACE::asInterface(obj);
+    return INTERFACE::asInterface(iHandle);
 }
 
 
 #define DECLARE_META_INTERFACE(INTERFACE)                               \
-    static I##INTERFACE *asInterface(const Binder *obj);                \
-    I##INTERFACE();                                                     \
-    virtual ~I##INTERFACE();                                            \
+    static I##INTERFACE *asInterface(int iHandle);                      \
+	static const char *serviceName;                                     \
 
 
 #define IMPLEMENT_META_INTERFACE(INTERFACE, NAME)                       \
-    I##INTERFACE *I##INTERFACE::asInterface(const Binder *obj)          \
+    I##INTERFACE *I##INTERFACE::asInterface(int iHandle)                \
     {                                                                   \
         I##INTERFACE *intr;                                             \
-        if (obj != NULL) {                                              \
-            intr = new Bp##INTERFACE(obj);                              \
-        }                                                               \
+        intr = new Bp##INTERFACE(iHandle);                              \
         return intr;                                                    \
     }                                                                   \
-    I##INTERFACE::I##INTERFACE() { }                                    \
-    I##INTERFACE::~I##INTERFACE() { }                                   \
-
+    const char *I##INTERFACE::serviceName = NAME;                       \
 
 #endif	//__INTERFACE_H__

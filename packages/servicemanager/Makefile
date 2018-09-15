@@ -15,35 +15,35 @@ export AS LD CC CPP AR NM
 export STRIP OBJCOPY OBJDUMP
 
 CFLAGS := -Wall -O2 -g
-CFLAGS += -I $(shell pwd)/include
+CFLAGS += -I $(shell pwd)/../../include
 
 LDFLAGS := -lm -lfreetype -lpthread -ljpeg -lpng -lasound -lmad -lid3tag -lopencv_core -lrt -lopencv_objdetect -ltxdevicesdk  -lpthread  -ldl  -lstdc++
 
 export CFLAGS LDFLAGS
 
-TOPDIR := $(shell pwd)
+CURDIR := $(shell pwd)
+TOPDIR := $(shell pwd)/../..
 export TOPDIR
+export CURDIR
 
 TARGET := servicemanager
 
-#obj-y += main_servicemanager.o
-obj-y += frameworks/
-obj-y += system/
-#obj-y += packages/
+obj-y += main_servicemanager.o
+obj-y +=  $(TOPDIR)/frameworks/
+obj-y +=  $(TOPDIR)/system/
 
 
 all :
-	mkdir $(TOPDIR)/bin 
-	make -C ./ -f $(TOPDIR)/Makefile.build
+	make -C ./ -f Makefile.build
 	$(CC) $(LDFLAGS) -o $(TARGET) built-in.o
 	mv $(TARGET) $(TOPDIR)/bin
 
 clean:
-	rm -f $(shell find -name "*.o")
-	rm -f $(TARGET)
+	rm -f $(shell find $(TOPDIR) -name "*.o")
+	rm -f $(TOPDIR)/bin/$(TARGET)
 
 distclean:
-	rm -f $(shell find -name "*.o")
-	rm -f $(shell find -name "*.d")
-	rm -rfd $(TARGET)/ bin
+	rm -f $(shell find $(TOPDIR) -name "*.o")
+	rm -f $(shell find $(TOPDIR) -name "*.d")
+	rm -f $(TOPDIR)/bin/*
 	
