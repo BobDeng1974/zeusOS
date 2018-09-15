@@ -338,7 +338,7 @@ class Binder {
 public:
 	Binder();
 	virtual ~Binder();
-	BinderState *binderOpen(unsigned int mapsize);
+	BinderState *binderOpen(void);
 	void binderClose(void);
 
 	int binderWrite(void *data, int len);
@@ -361,7 +361,7 @@ public:
 	void binderAcquire(unsigned int target);
 	void binderRelease(unsigned int target);
 
-	int binderParse(Parcel *data, unsigned char *ptr, int size);
+	int binderParse(Parcel *data, unsigned char *ptr, int size, int callback);
 	virtual void binderDeath(void *ptr);
 	void binderLinkToDeath(unsigned int target, struct BinderDeath *death);
 	
@@ -371,7 +371,7 @@ public:
 	
 	void binderSetMaxthreads(int threads);
 
-	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) = 0;
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) {return 0;};
 
 	int mTargetHandle;	
 private:

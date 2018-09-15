@@ -69,13 +69,13 @@ int BpTestService::hello(const unsigned char *str)
 	msg.putUint32(0);
 	msg.putString8(str);
 
-
-	if (binderCall(msg, reply, mTargetHandle, HELLO_SVR_CMD_SAYHELLO_TO, 0))
+	printf("BpTestService::mTargetHandle = %d\n", mTargetHandle);
+	if (mBinder->binderCall(msg, reply, mTargetHandle, HELLO_SVR_CMD_SAYHELLO_TO, 0))
 		return -1;
 
 	status = reply.getUint32();
 
-    binderDone(msg, reply);
+    mBinder->binderDone(msg, reply);
 
 	return status;
 

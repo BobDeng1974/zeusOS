@@ -193,22 +193,22 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
 
 int BpServiceManager::getService(const unsigned char *name)
 {
-    uint32_t handle;
+    unsigned int handle;
 	Parcel msg, reply;
 
 	msg.putUint32(0);
 	msg.putString8(name);
 
 
-    if (binderCall(msg, reply, mTargetHandle, SVC_MGR_CHECK_SERVICE, 0))
-        return 0;
+    if (mBinder->binderCall(msg, reply, mTargetHandle, SVC_MGR_CHECK_SERVICE, 0))
+        return -1;
 
 	handle = reply.getRef();
 
     if (handle)
-        binderAcquire(handle);
+        mBinder->binderAcquire(handle);
 
-    binderDone(msg, reply);
+    mBinder->binderDone(msg, reply);
 
     return handle;
 
@@ -224,12 +224,12 @@ int BpServiceManager::addService(const unsigned char *name, void *ptr)
 	msg.putObj(ptr);
 
 
-	if (binderCall(msg, reply, mTargetHandle, SVC_MGR_ADD_SERVICE, 0))
+	if (mBinder->binderCall(msg, reply, mTargetHandle, SVC_MGR_ADD_SERVICE, 0))
 		return -1;
 
 	status = reply.getUint32();
 
-    binderDone(msg, reply);
+    mBinder->binderDone(msg, reply);
 
 	return status;
 }

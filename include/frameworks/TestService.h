@@ -6,14 +6,14 @@
 
 #define HELLO_SVR_CMD_SAYHELLO_TO 1
 
-class ITestService : public Binder{
+class ITestService : public IInterface {
 public:
 	virtual int hello(const unsigned char *str) = 0;
 	DECLARE_META_INTERFACE(TestService);
 };
 
 
-class BnTestService : public ITestService {
+class BnTestService : public ITestService, public Binder {
 public:
 	virtual int hello(const unsigned char *str);
 	
@@ -27,11 +27,14 @@ public:
 
 class BpTestService : public ITestService {
 public:
-	BpTestService(int iHandle){ mTargetHandle = iHandle; }
-	virtual int hello(const unsigned char *str) ;
-	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) {return 0;}
-private:
 	BpTestService(){}
+	BpTestService(Binder *binder, int iHandle)
+	{		
+		mBinder = binder;
+		mTargetHandle = iHandle;
+	}
+	virtual int hello(const unsigned char *str) ;
+private:
 };
 
 

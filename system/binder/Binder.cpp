@@ -46,7 +46,7 @@ void binder_thread_loop(BinderState *bs, Binder *binder)
             break;
         }
 
-        res = binder->binderParse(NULL, (unsigned char *)readbuf, bwr.read_consumed);
+        res = binder->binderParse(NULL, (unsigned char *)readbuf, bwr.read_consumed, 1/* callback */);
         if (res == 0) {
             ALOGE("binder_loop: unexpected reply?!\n");
             break;
@@ -71,16 +71,17 @@ static void * binder_thread_routine(void *ptr)
 
 Binder::Binder()
 {
-	binderOpen(128*1024);
+
 }
 Binder::~Binder()
 {
 	binderClose();
 }
 
-BinderState *Binder::binderOpen(unsigned int mapsize)
+BinderState *Binder::binderOpen(void)
 {
 	struct binder_version vers;
+	unsigned int mapsize = 128 * 1024;
 
 	mBinderState = new BinderState();
 	if (!mBinderState) {
@@ -165,8 +166,8 @@ int Binder::binderCall(Parcel& msg, Parcel& reply, unsigned int target, unsigned
 			fprintf(stderr,"binder: ioctl failed (%s)\n", strerror(errno));
 			goto fail;
 		}
-
-		res = binderParse(&reply, (unsigned char *)readbuf, bwr.read_consumed);
+		
+		res = binderParse(&reply, (unsigned char *)readbuf, bwr.read_consumed, 0/* no callback */);
 		if (res == 0) return 0;
 		if (res < 0) goto fail;
 	}
@@ -264,7 +265,7 @@ const char *cmd_name(unsigned int cmd)
 }
 
 
-int Binder::binderParse(Parcel *data, unsigned char *ptr, int size)
+int Binder::binderParse(Parcel *data, unsigned char *ptr, int size, int callback)
 {
 	int r = 1;
 	unsigned char * end = ptr + size;
@@ -314,13 +315,15 @@ int Binder::binderParse(Parcel *data, unsigned char *ptr, int size)
 				return -1;
 			}
 
-			Parcel msg;
-			Parcel reply;
-			int res;
+			if (callback) {
+				Parcel msg;
+				Parcel reply;
+				int res;
 
-			msg.bioInitFromTxn(txn);
-			res = onTransact(txn, &msg, &reply);
-			binderSendReply(reply, txn->data.ptr.buffer, res);
+				msg.bioInitFromTxn(txn);
+				res = onTransact(txn, &msg, &reply);
+				binderSendReply(reply, txn->data.ptr.buffer, res);
+			}
 
 			ptr += sizeof(*txn);
 			break;
@@ -404,7 +407,7 @@ void Binder::binderLoop(void)
             break;
         }
 
-        res = binderParse(NULL, (unsigned char *) readbuf, bwr.read_consumed);
+        res = binderParse(NULL, (unsigned char *) readbuf, bwr.read_consumed, 1/* callback */);
         if (res == 0) {
             ALOGE("binder_loop: unexpected reply?!\n");
             break;

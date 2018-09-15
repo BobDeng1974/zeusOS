@@ -6,9 +6,12 @@
 
 int main(int argc, char **argv)
 {
-	IServiceManager *sm = interface_cast<IServiceManager>(BINDER_SERVICE_MANAGER);
 	BnTestService *testService = new BnTestService();
 	
+
+	testService->binderOpen();
+	IServiceManager *sm = interface_cast<IServiceManager>(testService, BINDER_SERVICE_MANAGER);
+
 	sm->addService((unsigned char *)ITestService::serviceName, testService);
 
 
@@ -16,6 +19,8 @@ int main(int argc, char **argv)
 	
 
 	testService->binderLoop();
+	testService->binderClose();
+
 	return 0;
 }
 

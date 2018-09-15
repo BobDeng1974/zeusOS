@@ -15,16 +15,15 @@ struct BinderRef {
 	unsigned int handle;
 };
 
-class IServiceManager : public Binder{
+class IServiceManager : public IInterface {
 public:
 	virtual int getService(const unsigned char *name) = 0;
 	virtual int addService(const unsigned char *name, void *ptr) = 0;
 	DECLARE_META_INTERFACE(ServiceManager);
-
 };
 
 
-class BnServiceManager : public IServiceManager {
+class BnServiceManager : public IServiceManager, public Binder {
 public:
 	virtual int getService(const unsigned char *name);
 	virtual int addService(const unsigned char *name, void *ptr);
@@ -39,12 +38,17 @@ public:
 
 class BpServiceManager : public IServiceManager {
 public:
-	BpServiceManager(int iHandle){ mTargetHandle = iHandle; }
+	BpServiceManager() {}
+	BpServiceManager(Binder *binder, int iHandle)
+	{		
+		mBinder = binder;
+		mTargetHandle = iHandle;
+	}
 	virtual int getService(const unsigned char *name) ;
 	virtual int addService(const unsigned char *name, void *ptr);
-	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) {return 0;}
+	
 private:
-	BpServiceManager(){}
+
 };
 
 
