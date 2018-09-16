@@ -1,26 +1,21 @@
 #include <frameworks/ServiceManager.h>
 #include <frameworks/TestService.h>
+#include <frameworks/InputManager.h>
+#include <unistd.h>
+#include <stdio.h>
 
 
 
 
 int main(int argc, char **argv)
 {
-	BnTestService *testService = new BnTestService();
-	
+	Binder::getBinder()->binderSetMaxthreads(2);
 
-	testService->binderOpen();
-	IServiceManager *sm = interface_cast<IServiceManager>(testService, BINDER_SERVICE_MANAGER);
-
-	sm->addService((unsigned char *)ITestService::serviceName, testService);
+	IServiceManager *sm = interface_cast<IServiceManager>(BINDER_SERVICE_MANAGER);
+	sm->addService(ITestService::serviceName, BnTestService::get());
 
 
-	testService->binderSetMaxthreads(2);
-	
-
-	testService->binderLoop();
-	testService->binderClose();
-
+	Binder::getBinder()->binderLoop();
 	return 0;
 }
 

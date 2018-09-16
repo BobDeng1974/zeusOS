@@ -132,10 +132,10 @@ void Parcel::putRef(unsigned int iHandle)
     obj->cookie = 0;
 }
 
-void Parcel::putString8(const unsigned char *str)
+void Parcel::putString8(const char *str)
 {
     unsigned int len;
-    unsigned char *ptr;
+    char *ptr;
 
     if (!str) {
         putUint32(0xffffffff);
@@ -145,15 +145,15 @@ void Parcel::putString8(const unsigned char *str)
     len = 0;
     while (str[len]) len++;
 
-    if (len >= (MAX_BIO_SIZE / sizeof(unsigned char))) {
+    if (len >= (MAX_BIO_SIZE / sizeof(char))) {
         putUint32(0xffffffff);
         return;
     }
 
     /* Note: The payload will carry 32bit size instead of size_t */
     putUint32(len);
-    len = (len + 1) * sizeof(unsigned char);
-    ptr = (unsigned char *)bioAlloc(len);
+    len = (len + 1) * sizeof(char);
+    ptr = (char *)bioAlloc(len);
     if (ptr)
         memcpy(ptr, str, len);
 
@@ -241,7 +241,7 @@ unsigned int Parcel::getUint32(void)
     return ptr ? *ptr : 0;
 }
 
-unsigned char *Parcel::getString8(unsigned int *size)
+char *Parcel::getString8(unsigned int *size)
 {
     unsigned int len;
 
@@ -249,7 +249,7 @@ unsigned char *Parcel::getString8(unsigned int *size)
     len = getUint32();
     if (size)
         *size = len;
-    return (unsigned char *)get((len + 1) * sizeof(unsigned char));
+    return (char *)get((len + 1) * sizeof(char));
 }
 
 

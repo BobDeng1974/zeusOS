@@ -28,12 +28,12 @@ struct svcinfo
     BinderDeath death;
     int allow_isolated;
     size_t len;
-    unsigned char name[0];
+    char name[0];
 };
 
 struct svcinfo *svclist = NULL;
 
-struct svcinfo *find_svc(const unsigned char *name, size_t len)
+struct svcinfo *find_svc(const    char *name, int len)
 {
     struct svcinfo *si;
 
@@ -52,7 +52,45 @@ unsigned char svcmgr_id[] = {
 };
 
 
-int BnServiceManager::getService(const unsigned char *name)
+static void serviceManagerbinderDeath(void *ptr)
+{
+    struct svcinfo *si = (struct svcinfo* ) ptr;
+
+    ALOGI("service '%s' died\n", si->name);
+    if (si->handle) {
+        Binder::getBinder()->binderRelease(si->handle);
+		
+        si->handle = 0;	//只是把handle设为0, 没有free 掉 si。当下次这个服务再注册进来，就不用再分配内存了
+    }
+	
+}
+
+
+BnServiceManager *BnServiceManager::mBnServiceManager = NULL;
+pthread_mutex_t BnServiceManager::tMutex  = PTHREAD_MUTEX_INITIALIZER;
+
+
+BnServiceManager* BnServiceManager::get(void)
+{
+	if (NULL == mBnServiceManager) {		
+		pthread_mutex_lock(&tMutex);
+		if (NULL == mBnServiceManager) {
+			mBnServiceManager = new BnServiceManager();
+		}
+		pthread_mutex_unlock(&tMutex);
+	}
+
+	return mBnServiceManager;
+}
+
+
+BnServiceManager::BnServiceManager()
+{
+
+}
+
+
+int BnServiceManager::getService(const char *name)
 {
     struct svcinfo *si;
 	int len;
@@ -68,7 +106,7 @@ int BnServiceManager::getService(const unsigned char *name)
 
 }
 
-int BnServiceManager::addService(const unsigned char *name, void *ptr)
+int BnServiceManager::addService(const char *name, void *ptr)
 {
     struct svcinfo *si;
 	struct BinderRef *ptBinderRef = (struct BinderRef *)ptr;
@@ -82,7 +120,7 @@ int BnServiceManager::addService(const unsigned char *name, void *ptr)
     if (si) {
         if (si->handle) {
             ALOGE("add_service('%s',%x) uid=%d - ALREADY REGISTERED, OVERRIDE\n", name, ptBinderRef->handle, ptBinderRef->sender_euid);
-            binderDeath((void *)si);
+			serviceManagerbinderDeath((void *)si);
         }
         si->handle = ptBinderRef->handle;
     } else {
@@ -95,7 +133,7 @@ int BnServiceManager::addService(const unsigned char *name, void *ptr)
         si->len = ptBinderRef->len;
         memcpy(si->name, name, (ptBinderRef->len + 1));
         si->name[ptBinderRef->len] = '\0';
-		si->death.binder = this;
+		si->death.binderDeath = serviceManagerbinderDeath;
         si->death.ptr = si;
         si->allow_isolated = ptBinderRef->allow_isolated;
         si->next = svclist;
@@ -104,30 +142,18 @@ int BnServiceManager::addService(const unsigned char *name, void *ptr)
 
     ALOGI("add_service('%s'), handle = %d\n", name, ptBinderRef->handle);
 
-    binderAcquire(ptBinderRef->handle);
-    binderLinkToDeath(ptBinderRef->handle, &si->death);
+    Binder::getBinder()->binderAcquire(ptBinderRef->handle);
+    Binder::getBinder()->binderLinkToDeath(ptBinderRef->handle, &si->death);
     return 0;
 
 }
 
-void BnServiceManager::binderDeath(void *ptr)
-{
-    struct svcinfo *si = (struct svcinfo* ) ptr;
-
-    ALOGI("service '%s' died\n", si->name);
-    if (si->handle) {
-        binderRelease(si->handle);
-		
-        si->handle = 0;
-    }
-
-}
 
 
 int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply)
 {
 	struct BinderRef tBinderRef;
-    unsigned char *name;
+    char *name;
     unsigned int len;
     unsigned int handle;
     unsigned int strict_policy;
@@ -142,6 +168,11 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
 
 
     strict_policy = msg->getUint32();
+	if (strict_policy != 0) {
+		printf("BnServiceManager : strict_policy error!\n");
+		reply->putUint32(-1);
+		return -1;
+	}
 
 
 
@@ -191,7 +222,7 @@ int BnServiceManager::onTransact(struct binder_transaction_data *txn, Parcel *ms
 }
 
 
-int BpServiceManager::getService(const unsigned char *name)
+int BpServiceManager::getService(const char *name)
 {
     unsigned int handle;
 	Parcel msg, reply;
@@ -200,21 +231,21 @@ int BpServiceManager::getService(const unsigned char *name)
 	msg.putString8(name);
 
 
-    if (mBinder->binderCall(msg, reply, mTargetHandle, SVC_MGR_CHECK_SERVICE, 0))
+    if (Binder::getBinder()->binderCall(msg, reply, mTargetHandle, SVC_MGR_CHECK_SERVICE, 0))
         return -1;
 
 	handle = reply.getRef();
 
     if (handle)
-        mBinder->binderAcquire(handle);
+        Binder::getBinder()->binderAcquire(handle);
 
-    mBinder->binderDone(msg, reply);
+    Binder::getBinder()->binderDone(msg, reply);
 
     return handle;
 
 }
 
-int BpServiceManager::addService(const unsigned char *name, void *ptr)
+int BpServiceManager::addService(const char *name, void *ptr)
 {
     int status;
 	Parcel msg, reply;
@@ -223,13 +254,12 @@ int BpServiceManager::addService(const unsigned char *name, void *ptr)
 	msg.putString8(name);
 	msg.putObj(ptr);
 
-
-	if (mBinder->binderCall(msg, reply, mTargetHandle, SVC_MGR_ADD_SERVICE, 0))
+	if (Binder::getBinder()->binderCall(msg, reply, mTargetHandle, SVC_MGR_ADD_SERVICE, 0))
 		return -1;
 
 	status = reply.getUint32();
 
-    mBinder->binderDone(msg, reply);
+    Binder::getBinder()->binderDone(msg, reply);
 
 	return status;
 }

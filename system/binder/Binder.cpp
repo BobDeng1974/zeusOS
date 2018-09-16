@@ -1,4 +1,5 @@
 #include <binder/Binder.h>
+#include <frameworks/ServiceManager.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,10 +69,29 @@ static void * binder_thread_routine(void *ptr)
 }
 
 
+Binder *Binder::mBinder = NULL;
+pthread_mutex_t Binder::tMutex  = PTHREAD_MUTEX_INITIALIZER;
+
+
+Binder* Binder::getBinder(void)
+{
+	if (NULL == mBinder) {		
+		pthread_mutex_lock(&tMutex);
+		if (NULL == mBinder) {
+			mBinder = new Binder();
+		}
+		pthread_mutex_unlock(&tMutex);
+	}
+
+	return mBinder;
+}
+
 
 Binder::Binder()
 {
+	mBninder = NULL;
 
+	binderOpen();
 }
 Binder::~Binder()
 {
@@ -232,11 +252,6 @@ void Binder::binderRelease(unsigned int target)
     binderWrite(cmd, sizeof(cmd));
 }
 
-void Binder::binderDeath(void *ptr)
-{
-	printf("binderDeath !!!\n");
-}
-
 
 #define NAME(n) case n: return #n
 const char *cmd_name(unsigned int cmd)
@@ -319,12 +334,20 @@ int Binder::binderParse(Parcel *data, unsigned char *ptr, int size)
 			Parcel msg;
 			Parcel reply;
 			int res;
-
+			
 			msg.bioInitFromTxn(txn);
-			res = onTransact(txn, &msg, &reply);
+
+			BnBinder *BBinder;
+
+			if (txn->target.ptr) {
+				BBinder = (BnBinder *)txn->target.ptr;
+				res = BBinder->onTransact(txn, &msg, &reply);
+			}
+			else {
+				res = BnServiceManager::get()->onTransact(txn, &msg, &reply);
+			}
+			
 			binderSendReply(reply, txn->data.ptr.buffer, res);
-
-
 			ptr += sizeof(*txn);
 			break;
 		}
@@ -347,10 +370,9 @@ int Binder::binderParse(Parcel *data, unsigned char *ptr, int size)
 		}
 		case BR_DEAD_BINDER: {
 			struct BinderDeath *death = (struct BinderDeath *)(unsigned int *) *(binder_uintptr_t *)ptr;
-			Binder *binder = (Binder *)death->binder;
 			ptr += sizeof(binder_uintptr_t);
 
-			binder->binderDeath(death->ptr);
+			death->binderDeath(death->ptr);
 			break;
 		}
 		case BR_FAILED_REPLY:
@@ -429,6 +451,12 @@ int Binder::binderBecomeContextManager(void)
 void Binder::binderSetMaxthreads(int threads)
 {
 	ioctl(mBinderState->fd, BINDER_SET_MAX_THREADS, &threads);
+}
+
+/* servicemanager 才需要这个 */
+void Binder::setBnBinder(BnBinder *bninder)
+{
+	mBninder = bninder;
 }
 
 

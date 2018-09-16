@@ -2,33 +2,54 @@
 #include <stdio.h>
 
 
-int BnTestService::hello(const unsigned char *str)
+
+
+BnTestService *BnTestService::mBnTestService = NULL;
+pthread_mutex_t BnTestService::tMutex  = PTHREAD_MUTEX_INITIALIZER;
+
+
+BnTestService* BnTestService::get(void)
 {
-	for (int i = 0; i < 3; i++) {
+	if (NULL == mBnTestService) {		
+		pthread_mutex_lock(&tMutex);
+		if (NULL == mBnTestService) {
+			mBnTestService = new BnTestService();
+		}
+		pthread_mutex_unlock(&tMutex);
+	}
+
+	return mBnTestService;
+}
+
+
+BnTestService::BnTestService()
+{
+
+}
+
+
+int BnTestService::hello(const char *str)
+{
+	for (int i = 0; i < 5; i++) {
 		printf("hello %s\n", str);		
 	}
 
 	return 0;
 }
 
-void BnTestService::binderDeath(void *ptr)
-{
-	printf("binderDeath !!!\n");
-}
 
 int BnTestService::onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply)
 {
-    unsigned char *s;
-	unsigned char name[512];
+    char *str;
     unsigned int len;
     unsigned int handle;
     unsigned int strict_policy;
-	unsigned int iRet;
+	unsigned int iRet = -1;
 	int i;
 
 	strict_policy = msg->getUint32();
 	if (strict_policy != 0) {
-		printf("strict_policy error!\n");
+		printf("BnTestService : strict_policy error!\n");
 		reply->putUint32(-1);
 		return -1;
 	}
@@ -36,16 +57,9 @@ int BnTestService::onTransact(struct binder_transaction_data *txn, Parcel *msg, 
 
     switch(txn->code) {
     case HELLO_SVR_CMD_SAYHELLO_TO:
-		s = msg->getString8(&len);
+		str = msg->getString8(&len);
 
-		if (s == NULL) {
-			return -1;
-		}
-		for (i = 0; i < len; i++)
-			name[i] = s[i];
-		name[i] = '\0';
-
-		iRet = hello(name);
+		iRet = hello(str);
 
 		reply->putUint32(iRet);
 		
@@ -61,7 +75,7 @@ int BnTestService::onTransact(struct binder_transaction_data *txn, Parcel *msg, 
 }
 
 
-int BpTestService::hello(const unsigned char *str)
+int BpTestService::hello(const   char *str)
 {
     int status;
 	Parcel msg, reply;
@@ -70,18 +84,18 @@ int BpTestService::hello(const unsigned char *str)
 	msg.putString8(str);
 
 	printf("BpTestService::mTargetHandle = %d\n", mTargetHandle);
-	if (mBinder->binderCall(msg, reply, mTargetHandle, HELLO_SVR_CMD_SAYHELLO_TO, 0))
+	printf("BpTestService::str = %s\n", str);
+	if (Binder::getBinder()->binderCall(msg, reply, mTargetHandle, HELLO_SVR_CMD_SAYHELLO_TO, 0))
 		return -1;
 
 	status = reply.getUint32();
 
-    mBinder->binderDone(msg, reply);
+    Binder::getBinder()->binderDone(msg, reply);
 
 	return status;
-
 }
 
 
-IMPLEMENT_META_INTERFACE(TestService, "testservice");
+IMPLEMENT_META_INTERFACE(TestService, "TestService");
 
 

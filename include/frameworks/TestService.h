@@ -8,18 +8,20 @@
 
 class ITestService : public IInterface {
 public:
-	virtual int hello(const unsigned char *str) = 0;
+	
+	virtual int hello(const char *str) = 0;
 	DECLARE_META_INTERFACE(TestService);
 };
 
-
-class BnTestService : public ITestService, public Binder {
+class BnTestService : public BnBinder, public ITestService {
 public:
-	virtual int hello(const unsigned char *str);
-	
-	virtual void binderDeath(void *ptr);
-
+	virtual int hello(const char *str);
 	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply);
+	static BnTestService* get(void);
+private:
+	BnTestService();
+	static BnTestService *mBnTestService;
+	static pthread_mutex_t tMutex;
 };
 
 
@@ -28,12 +30,11 @@ public:
 class BpTestService : public ITestService {
 public:
 	BpTestService(){}
-	BpTestService(Binder *binder, int iHandle)
+	BpTestService(int iHandle)
 	{		
-		mBinder = binder;
 		mTargetHandle = iHandle;
 	}
-	virtual int hello(const unsigned char *str) ;
+	virtual int hello(const char *str) ;
 private:
 };
 

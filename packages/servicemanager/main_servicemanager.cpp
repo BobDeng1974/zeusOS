@@ -3,13 +3,10 @@
 
 int main(int argc, char **argv)
 {
-	BnServiceManager *serviceManager = new BnServiceManager();
-	serviceManager->binderOpen();
-	serviceManager->binderSetMaxthreads(4);
-	serviceManager->binderBecomeContextManager();
+	Binder::getBinder()->binderSetMaxthreads(4);
+	Binder::getBinder()->binderBecomeContextManager();
 	
-
-	serviceManager->binderLoop();
-	serviceManager->binderClose();
+	Binder::getBinder()->setBnBinder(BnServiceManager::get());
+	Binder::getBinder()->binderLoop();
 	return 0;
 }

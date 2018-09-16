@@ -17,11 +17,11 @@ public:
 	void putFd(unsigned int iFd);
 	void putObj(void *ptr);
 	void putRef(unsigned int iHandle);
-	void putString8(const unsigned char *str);
+	void putString8(const char *str);
 	void putString16(const unsigned short *str);
 	void putString16_X(const unsigned short *_str);
 	unsigned int getUint32(void);
-	unsigned char *getString8(unsigned int *size);
+	char *getString8(unsigned int *size);
 	unsigned short *getString16(unsigned int *size);
 	unsigned int getFd(void);
 	unsigned int getRef(void);

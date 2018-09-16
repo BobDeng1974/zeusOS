@@ -305,8 +305,8 @@ struct BinderIO
 };
 
 struct BinderDeath {
-	void *binder;
     void *ptr;
+	void (*binderDeath)(void *ptr);
 };
 
 /* the one magic handle */
@@ -334,12 +334,15 @@ struct BinderThreadDesc {
 };
 
 
+class BnBinder {
+public:
+	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) = 0;
+};
+
+
 class Binder {
 public:
-	Binder();
 	virtual ~Binder();
-	BinderState *binderOpen(void);
-	void binderClose(void);
 
 	int binderWrite(void *data, int len);
 	
@@ -362,7 +365,7 @@ public:
 	void binderRelease(unsigned int target);
 
 	int binderParse(Parcel *data, unsigned char *ptr, int size);
-	virtual void binderDeath(void *ptr);
+	
 	void binderLinkToDeath(unsigned int target, struct BinderDeath *death);
 	
 	virtual void binderLoop(void);
@@ -371,11 +374,19 @@ public:
 	
 	void binderSetMaxthreads(int threads);
 
-	virtual int onTransact(struct binder_transaction_data *txn, Parcel *msg, Parcel *reply) {return 0;};
 
-	int mTargetHandle;	
+	void setBnBinder(BnBinder *bninder);
+
+	int mTargetHandle;
+	static Binder* getBinder(void);
 private:
+	Binder();
+	BinderState *binderOpen(void);
+	void binderClose(void);
+	static Binder *mBinder;
+	static pthread_mutex_t tMutex;
 	BinderState *mBinderState;
+	BnBinder *mBninder;
 
 
 };
