@@ -69,10 +69,11 @@ int BnInputManager::addListener(struct ListenerDesc *ptListenerDesc)
 {
 	printf("BnInputManager::addListener\n");
 
-	if (ptListenerDesc->iHandle) {
-	    Binder::getBinder()->binderAcquire(ptListenerDesc->iHandle);
-    	Binder::getBinder()->binderLinkToDeath(ptListenerDesc->iHandle, ptListenerDesc->death);
-	}
+	if (!ptListenerDesc->iHandle)
+		return -1;
+
+	Binder::getBinder()->binderAcquire(ptListenerDesc->iHandle);
+	Binder::getBinder()->binderLinkToDeath(ptListenerDesc->iHandle, ptListenerDesc->death);
 
 	mListenerDescList.push_back(ptListenerDesc);
 	return 0;

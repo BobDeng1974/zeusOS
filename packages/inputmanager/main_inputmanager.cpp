@@ -28,6 +28,7 @@ static void inputReaderThread(void *ptr)
 	int i;
 
 	EventDevice::scanDevice("/dev/input");
+	EventDevice::scanDevice("/dev");
 	while (1) {
 		iRet = InputReader::getInputReader()->readOnce(cookEvent, 128);
 		if (iRet <= 0) {
